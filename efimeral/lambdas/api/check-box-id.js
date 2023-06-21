@@ -42,6 +42,8 @@ exports.handler = Sentry.AWSLambda.wrapHandler(async (event, context) => {
     const networkData = await getNetworkData(task);
 
     const sd = new ServiceDiscovery();
+    console.log(`cloudmap ID: ${process.env.CLOUDMAP_ID}`);
+
     const registrationResponse = await sd.registerInstance({
       ServiceId: process.env.CLOUDMAP_ID,
       InstanceId: event.pathParameters.box_id,

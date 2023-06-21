@@ -170,6 +170,9 @@ export class APIStack extends cdk.Stack {
       description: 'Namespace for boxes',
     });
 
+    const parts = ns.publicDnsNamespaceId.split('/')
+    const cloudmapId = parts[parts.length - 1];
+
     const fnApiCheckBoxIdHandler = new lambdaNodeJS.NodejsFunction(this, 'api-check-box-id', {
       description: 'Checks RUNNING state for box ID and returns its public URL if exists',
       runtime: lambda.Runtime.NODEJS_18_X,
@@ -182,7 +185,7 @@ export class APIStack extends cdk.Stack {
         LAMBDAS_SENTRY_DSN: sentryDSN,
         CORS_DISABLED: "true",
         CLUSTER_ARN: cluster.clusterArn,
-        CLOUDMAP_ID: ns.publicDnsNamespaceId,
+        CLOUDMAP_ID: cloudmapId,
       },
       bundling: {
         esbuildArgs: {
