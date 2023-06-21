@@ -14,11 +14,14 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
+import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 
 
 export const ecrRepositoyName = 'efimeral-boxes';
 export const containerTimeoutMinutes = 10;
-export const apiSubdomain = 'api.efimeral.ar';
+export const domain = 'efimeral.ar';
+export const apiSubdomain = `api.${domain}`;
+export const boxesSubdomain = `boxes.${domain}`;
 export const images = [
   {tag: 'alpine', ecr: true, compatibility: ecs.Compatibility.FARGATE, privileged: false, port: 8080, portRange: undefined, image: '', environment: {}},
   {tag: 'ubuntu', ecr: true, compatibility: ecs.Compatibility.FARGATE, privileged: false, port: 8080, portRange: undefined, image: '', environment: {}},
@@ -57,6 +60,7 @@ export class APIStack extends cdk.Stack {
     sg.addIngressRule(ec2.Peer.anyIpv6(), ec2.Port.allTcp(), 'Allow access from any IPv6 to all ports');
 
     const cluster = new ecs.Cluster(this, 'boxes-cluster', {
+      vpc: vpc,
       clusterName: 'boxes-cluster',
       containerInsights: true,
       capacity: {
@@ -64,7 +68,6 @@ export class APIStack extends cdk.Stack {
         minCapacity: 0,  // CHANGE THIS to 1 to support EC2 tasks
         maxCapacity: 0,  // CHANGE THIS to 1 to support EC2 tasks
       },
-      vpc: vpc
     });    
 
     const tasks: { [key: string]: ecs.TaskDefinition } = {};
@@ -155,6 +158,18 @@ export class APIStack extends cdk.Stack {
 
     images.forEach(tag => tasks[tag.tag].grantRun(fnApiCreateBoxHandler));
 
+    const fnApiCreateBoxPolicy = new iam.PolicyStatement({
+      actions: ['ecs:RunTask', 'ecs:ListTasks'],
+      resources: ["*"],
+      effect: iam.Effect.ALLOW,
+    });
+    fnApiCreateBoxHandler.addToRolePolicy(fnApiCreateBoxPolicy);
+
+    const ns = new servicediscovery.PublicDnsNamespace(this, 'boxes-namespace', {
+      name: boxesSubdomain,
+      description: 'Namespace for boxes',
+    });
+
     const fnApiCheckBoxIdHandler = new lambdaNodeJS.NodejsFunction(this, 'api-check-box-id', {
       description: 'Checks RUNNING state for box ID and returns its public URL if exists',
       runtime: lambda.Runtime.NODEJS_18_X,
@@ -167,6 +182,7 @@ export class APIStack extends cdk.Stack {
         LAMBDAS_SENTRY_DSN: sentryDSN,
         CORS_DISABLED: "true",
         CLUSTER_ARN: cluster.clusterArn,
+        CLOUDMAP_ID: ns.publicDnsNamespaceId,
       },
       bundling: {
         esbuildArgs: {
@@ -178,22 +194,15 @@ export class APIStack extends cdk.Stack {
       },
     });
 
-    const fnApiCreateBoxPolicy = new iam.PolicyStatement({
-      actions: ['ecs:RunTask', 'ecs:ListTasks',],
-      resources: ["*"],
-      effect: iam.Effect.ALLOW,
-    });
-    fnApiCreateBoxHandler.addToRolePolicy(fnApiCreateBoxPolicy);
-
     const fnApiCheckBoxIdPolicy = new iam.PolicyStatement({
-      actions: ['ecs:DescribeTasks', 'ec2:DescribeNetworkInterfaces'],
+      actions: ['ecs:DescribeTasks', 'ec2:DescribeNetworkInterfaces', 'servicediscovery:GetService', 'servicediscovery:RegisterInstance'],  //, 'route53:ChangeResourceRecordSets'],
       resources: ["*"],
       effect: iam.Effect.ALLOW,
     });
     fnApiCheckBoxIdHandler.addToRolePolicy(fnApiCheckBoxIdPolicy);
 
     const api = new apigateway.RestApi(this, "boxes-api", {
-      restApiName: "Efimeral service API",
+      restApiName: "Efimeral API service",
       description: "Linux boxes on demand.",
       defaultCorsPreflightOptions: {
         allowHeaders: [
@@ -257,7 +266,7 @@ export class APIStack extends cdk.Stack {
     // API Subdomain --------------------
 
     const webZone = route53.PublicHostedZone.fromHostedZoneAttributes(this, 'lookup-web-hosted-zone', {
-      zoneName: 'efimeral.ar',
+      zoneName: domain,
       hostedZoneId: String(process.env.WEB_HOSTED_ZONE_ID),
     });
 
@@ -266,20 +275,20 @@ export class APIStack extends cdk.Stack {
       validation: acm.CertificateValidation.fromDns(webZone),
     });
   
-    const domain = new apigateway.DomainName(this, 'api-subdomain', {
+    const dn = new apigateway.DomainName(this, 'api-subdomain', {
       domainName: apiSubdomain,
       certificate: certificate,
       endpointType: apigateway.EndpointType.REGIONAL,
     });
   
-    domain.addBasePathMapping(api, {
+    dn.addBasePathMapping(api, {
       basePath: 'prod',
     })
 
     new route53.ARecord(this, 'api-subdomain-alias-record', {
       zone: webZone,
       recordName: apiSubdomain,
-      target: route53.RecordTarget.fromAlias(new route53Targets.ApiGatewayDomain(domain)),
+      target: route53.RecordTarget.fromAlias(new route53Targets.ApiGatewayDomain(dn)),
     });
   }
 }
