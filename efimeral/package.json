@@ -27,6 +27,7 @@
     "typescript": "~4.9.5"
   },
   "dependencies": {
+    "@aws-sdk/client-servicediscovery": "^3.354.0",
     "@sentry/serverless": "^7.53.0",
     "adm-zip": "^0.5.10",
     "aws-cdk-lib": "2.80.0",
