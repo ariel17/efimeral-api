@@ -1,5 +1,6 @@
 const { EC2 } = require("@aws-sdk/client-ec2");
 const { ECS } = require("@aws-sdk/client-ecs");
+const { ServiceDiscovery } = require("@aws-sdk/client-servicediscovery")
 const Sentry = require("@sentry/serverless");
 
 
@@ -38,13 +39,24 @@ exports.handler = Sentry.AWSLambda.wrapHandler(async (event, context) => {
       };
     }
 
-    const containerURL = await getContainerURL(task);
+    const networkData = await getNetworkData(task);
+
+    const sd = new ServiceDiscovery();
+    const registrationResponse = await sd.registerInstance({
+      ServiceId: process.env.CLOUDMAP_ID,
+      InstanceId: event.pathParameters.box_id,
+      Attributes: {
+          AWS_INSTANCE_IPV4: networkData.Association.PublicIp,
+      }
+    });
+    console.log(`Registration response: ${JSON.stringify(registrationResponse)}`);
+
     return {
       statusCode: 200,
       headers: headers,
       body: JSON.stringify({
         message: 'Box is ready',
-        url: containerURL,
+        url: getContainerURL(networkData, task),
       }),
     };
 
@@ -79,7 +91,7 @@ async function getRunningTaskById(clusterArn, taskId, ecs) {
   return undefined;
 }
 
-async function getContainerURL(task) {
+async function getNetworkData(task) {
   const details = task.attachments[0].details;
   let eni = '';
   for (let i = 0; i < details.length; i++) {
@@ -101,5 +113,9 @@ async function getContainerURL(task) {
   const data = await ec2.describeNetworkInterfaces(params);
   console.log(`Network data: ${JSON.stringify(data)}`);
   
-  return `http://${data.NetworkInterfaces[0].Association.PublicDnsName}:${ports[task.containers[0].name]}`
+  return data.NetworkInterfaces[0];
+}
+
+function getContainerURL(networkData, task) {
+  return `http://${networkData.Association.PublicDnsName}:${ports[task.containers[0].name]}`
 }
