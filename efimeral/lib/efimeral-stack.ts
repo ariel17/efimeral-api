@@ -127,6 +127,14 @@ export class APIStack extends cdk.Stack {
       this, 'sentry-dsn', 'lambdasSentryDSN'
     ).secretValue.unsafeUnwrap().toString();
 
+    const runningTasksLayer = new lambda.LayerVersion(this, 'running-tasks-layer', {
+      compatibleRuntimes: [
+        lambda.Runtime.NODEJS_18_X,
+      ],
+      code: lambda.Code.fromAsset('./lambdas/layers/running-tasks'),
+      description: 'Provides handy methods to work with running tasks.',
+    });
+
     const fnApiCreateBoxHandler = new lambdaNodeJS.NodejsFunction(this, 'api-create-box', {
       description: 'Creates new instances on Fargate cluster and returns the task ID as box ID.',
       runtime: lambda.Runtime.NODEJS_18_X,
@@ -147,13 +155,11 @@ export class APIStack extends cdk.Stack {
         SECURITY_GROUP_ID: sg.securityGroupId,
       },
       bundling: {
-        esbuildArgs: {
-          '--alias:@layer': './lambdas/layers/listtasks/nodejs',
-        },
         nodeModules: [
           '@sentry/serverless',
         ],
       },
+      layers: [runningTasksLayer, ],
     });
 
     images.forEach(tag => tasks[tag.tag].grantRun(fnApiCreateBoxHandler));
@@ -165,13 +171,14 @@ export class APIStack extends cdk.Stack {
     });
     fnApiCreateBoxHandler.addToRolePolicy(fnApiCreateBoxPolicy);
 
-    const ns = new servicediscovery.PublicDnsNamespace(this, 'boxes-namespace', {
+    const nsNamespace = new servicediscovery.PublicDnsNamespace(this, 'boxes-ns', {
       name: boxesSubdomain,
       description: 'Namespace for boxes',
     });
 
-    const parts = ns.publicDnsNamespaceId.split('/')
-    const cloudmapId = parts[parts.length - 1];
+    const nsService = new servicediscovery.Service(this, 'boxes-ns-service', {
+      namespace: nsNamespace,
+    });
 
     const fnApiCheckBoxIdHandler = new lambdaNodeJS.NodejsFunction(this, 'api-check-box-id', {
       description: 'Checks RUNNING state for box ID and returns its public URL if exists',
@@ -185,16 +192,15 @@ export class APIStack extends cdk.Stack {
         LAMBDAS_SENTRY_DSN: sentryDSN,
         CORS_DISABLED: "true",
         CLUSTER_ARN: cluster.clusterArn,
-        CLOUDMAP_ID: cloudmapId,
+        CLOUDMAP_NAMESPACE: nsNamespace.publicDnsNamespaceName,
+        CLOUDMAP_SERVICE_ID: nsService.serviceId,
       },
       bundling: {
-        esbuildArgs: {
-          '--alias:@layer': './lambdas/layers/listtasks/nodejs',
-        },
         nodeModules: [
           '@sentry/serverless',
         ],
       },
+      layers: [runningTasksLayer, ],
     });
 
     const fnApiCheckBoxIdPolicy = new iam.PolicyStatement({
