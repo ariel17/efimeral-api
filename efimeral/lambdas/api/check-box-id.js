@@ -1,6 +1,5 @@
 const { EC2 } = require("@aws-sdk/client-ec2");
 const { ECS } = require("@aws-sdk/client-ecs");
-const { ServiceDiscovery } = require("@aws-sdk/client-servicediscovery")
 const Sentry = require("@sentry/serverless");
 
 
@@ -39,20 +38,8 @@ exports.handler = Sentry.AWSLambda.wrapHandler(async (event, context) => {
       };
     }
 
-    const networkData = await getNetworkData(task);
-
-    const sd = new ServiceDiscovery();
-    console.log(`cloudmap ID: ${process.env.CLOUDMAP_ID}`);
-
-    const registrationResponse = await sd.registerInstance({
-      ServiceId: process.env.CLOUDMAP_ID,
-      InstanceId: event.pathParameters.box_id,
-      Attributes: {
-          AWS_INSTANCE_IPV4: networkData.Association.PublicIp,
-      }
-    });
-    console.log(`Registration response: ${JSON.stringify(registrationResponse)}`);
-
+    const ec2 = new EC2();
+    const networkData = await getNetworkData(task, ec2);
     return {
       statusCode: 200,
       headers: headers,
@@ -93,7 +80,7 @@ async function getRunningTaskById(clusterArn, taskId, ecs) {
   return undefined;
 }
 
-async function getNetworkData(task) {
+async function getNetworkData(task, ec2) {
   const details = task.attachments[0].details;
   let eni = '';
   for (let i = 0; i < details.length; i++) {
@@ -111,7 +98,6 @@ async function getNetworkData(task) {
     NetworkInterfaceIds: [eni],
   }
 
-  const ec2 = new EC2();
   const data = await ec2.describeNetworkInterfaces(params);
   console.log(`Network data: ${JSON.stringify(data)}`);
   
