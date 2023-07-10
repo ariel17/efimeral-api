@@ -12,7 +12,7 @@
     "cdk": "cdk"
   },
   "devDependencies": {
-    "@aws-sdk/client-ec2": "^3.332.0",
+    "@aws-sdk/client-ec2": "^3.367.0",
     "@aws-sdk/client-ecs": "^3.338.0",
     "@types/jest": "^27.5.2",
     "@types/mocha": "^10.0.1",
