@@ -16,7 +16,7 @@
     "@aws-sdk/client-ecs": "^3.338.0",
     "@types/jest": "^27.5.2",
     "@types/mocha": "^10.0.1",
-    "@types/node": "^10.17.27",
+    "@types/node": "^20.4.1",
     "@types/prettier": "2.6.0",
     "aws-cdk": "^2.80.0",
     "aws-sdk-client-mock": "^2.1.1",
